@@ -1,0 +1,564 @@
+---
+title: "**Effects of vaccination on the diffusion of Covid-19 and deaths due to Covid-19**"
+author: "Yigit Kavak, İbrahim Atakan Tursun, Ali Sahlar, Ceren Sentunali"
+date: "09.02.2022"
+output:
+  html_document:
+    toc: true
+---
+<style>
+body{
+  color: #708090 ;
+  font-family: Calibri;
+  font size:"12" ;
+  spacing:"1.5";
+  background-color: #F5F5F5;
+}
+pre{
+  color: #708090;
+  background-color: #F8F8FF;
+}
+</style>
+
+
+```{r setup, include=FALSE, warning= FALSE}
+library(data.table)
+library(RSQLite)
+library(NonlinearTSA)
+library(tseries)
+library(plm)
+library(COVID19)
+library(ggplot2)
+library(dplyr)
+library(countrycode)
+library(utils)
+library(urca)
+library(vars)
+library(stargazer)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## **Introduction**
+
+COVID-19 is a pandemic that has never been seen before in human history. There have been about 200 million confirmed illnesses and four million deaths worldwide in less than 18 months since the pandemic began. Massive efforts have also been made to find vaccines that are both safe and effective (Duduzile Ndwandwe, 2021). COVID-19 vaccine progress is exciting because it is the first time vaccine development has moved this quickly. 
+
+To induce protective immunity, whole viral vaccinations use a weakened (attenuated) or inactivated form of the severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2). A weakened variant of the virus is used in live attenuated vaccines, which can still grow and replicate but does not cause sickness (Ndwandwe, 2021).
+
+Although COVID-19 immunizations are effective in preventing serious disease and death in those who are exposed to the virus, a tiny percentage of persons who have been fully vaccinated will still contract the virus. Even the most effective vaccines are unable to protect against all illnesses. Increasing immunization rates is critical to minimizing severe COVID-19 cases and saving lives since the vaccine provides excellent protection against the most devastating COVID-19 outcomes.
+
+Government vigilance was lower than in prior periods when vaccines were introduced and had a strong uptake. Once 90 percent of the older population had been vaccinated, the distribution of illnesses and deaths was comparable across age groups as previously, but there were fewer deaths than expected even as government strin- gency declined (Arbel, 2021). Regardless of political differences, countries all around the world can unite and work together to accomplish a rapid and successful COVID-19 vaccine launch.
+
+
+## Data
+
+As a first, we downloaded packages are necessary. Next, we used two files which are Global Mobility Index and the data of COVID19 package.
+
+Our data consists of the followings:
+
+-DEATHS: The cumulative number of deaths, recorded daily between 03.01.2021 and 11.01.2021 (246 observations).
+-CONFIRMED: The cumulative number of infected people, recorded daily between 03.01.2021 and 11.01.2021 (246 observations).
+-PEOPLE FULLY VACCINATED:	The cumulative number of 2 dose (fully) vaccinated people, recorded daily between 03.01.2021 and 11.01.2021 (246 observations).
+-RESIDENTIALS:	The index of mobility provided by google, recorded daily between 03.01.2021 and 11.01.2021 (246 observations).
+-CONTEINTMENT HEALTH INDEX: The index data provided by Oxford University, recorded daily between 03.01.2021 and 11.01.2021 (246 observations) and contains various variables such as :
+--C1: Record closings of schools and universities
+--C2 Record closings of workplaces
+--C3 Record cancelling public events
+--C4 Record limits on gatherings
+--C5 Record closing of public transport
+--C6 Record orders to "shelter-in-place" and otherwise confine to the home
+--C7 Record restrictions on internal movement between cities/regions
+--C8 Record restrictions on international travel
+--H1 Record presence of public info campaigns
+--H2 Record government policy on who has access to testing
+--H3 Record government policy on contact tracing after a positive diagnosis
+--H6 Record policies on the use of facial coverings outside the home
+--H7 Record policies for vaccine delivery for different groups
+--H8 Record policies for protecting elderly people (as defined locally) in Long Term Care Facilities and/or the community and home setting,
+
+  
+```{r datapackages, eval = FALSE}
+library(data.table)
+library(RSQLite)
+library(NonlinearTSA)
+library(tseries)
+library(plm)
+library(COVID19)
+library(ggplot2)
+library(dplyr)
+library(countrycode)
+library(utils)
+library(urca)
+library(vars)
+library(stargazer)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r data}
+data1 <- read.csv("C:\\Users\\furka\\OneDrive\\Masaüstü\\econ413.csv")
+data1 <- as.data.table(data1)
+setkey(data1, country)
+data1 <- data1[!c("ZAF", "QAT", "LUX", "VNM", "PHL", "KEN", "TWN", "SAU", "NLD", "MAR", "LKA", "MNG", "CIV", "BGD", "ALB", "ARE", "LIE")]
+```
+
+Secondly, We determined the variables and specific time period when the data was complete and based on the google mobility index for countries.
+We have chosen 60 country and 246 days. The data was also chosen as daily. While determining, we cleaned the data from unnecessary columns and countries.
+
+This code show how we manipulated and cleaned the COVID19 data from COVID19 package
+
+``` {r dataclean19, eval = FALSE}
+
+db <- covid19(
+  level = 1,
+  start = "2021-03-01",
+  end = "2021-11-01",
+  vintage = NULL,
+  wb = NULL,
+  gmr = NULL,
+  amr = NULL,
+  dir = tempdir(),
+  verbose = TRUE,)
+dbdt <- as.data.table(db)
+View(dbdt)
+dbdt <- dbdt[!is.na(confirmed)]
+dbdt <- dbdt[, nobs := .N, by = iso_alpha_3]
+dbdt <- dbdt[nobs > 200]
+unique(dbdt$iso_alpha_3)
+dbdt <- dbdt[!is.na(vaccines)]
+dbdt <- dbdt[, nobs2 := .N, by = iso_alpha_3]
+dbdt <- dbdt[nobs2 > 150]
+selected_countries <- unique(dbdt$iso_alpha_3)
+db3 <- covid19(country = selected_countries,
+               level = 1,
+               start = "2021-03-01",
+               end = "2021-11-01",
+               vintage = NULL,
+               wb = NULL,
+               gmr = NULL,
+               amr = NULL,
+               dir = tempdir(),
+               verbose = TRUE,)
+
+
+dbdt <- dbdt[date <= as.Date("2021-11-01")]
+dbdt[, dconf := confirmed - shift(confirmed), by = iso_alpha_3]
+dbdt[, dtest := tests - shift(tests), by = iso_alpha_3]
+dbdt[, ddeath := deaths - shift(deaths), by = iso_alpha_3]
+dailytest <- dbdt[, sum(dtest, na.rm = TRUE), by = date]
+dbdt <- as.data.table(dbdt[,c("date", "confirmed", "deaths", "vaccines", "population", "iso_alpha_3", "workplace_closing", "stay_home_restrictions")])
+names(dbdt)[6] <- "country"
+
+my_data <- read.csv("C:\\Users\\furka\\OneDrive\\Masaüstü\\summary_report_countries.csv")
+
+my_data <- as.data.table(my_data[,c("country", "date", "retail.and.recreation", "grocery.and.pharmacy", "parks", "transit.stations", "workplaces", "residential")])
+my_data <- subset(my_data, date >= "2021-03-01" & date <= "2021-11-01")
+my_data$country <- countrycode(my_data$country, origin = 'country.name', destination = 'iso3c')
+my_data <- as.data.frame(my_data)
+my_data2 <- filter(my_data, country %in% selected_countries)
+```
+
+Then, we merged these files according to country and date. 
+
+```{r merge, eval=FALSE}
+
+xyz <- merge(dbdt2, my_data2, by = c("country","date"), all.x = TRUE)
+xyz <- as.data.table(xyz)
+
+```
+
+## Literature Review
+
+From beginning of the COVID 19 pandemic, governments tried to decrease the numbers of COVID cases and deaths by implying different interventions and vaccination policies. In this project, we tested the effectiveness of double-vaccination on mortality and case numbers with regressing the data from 60 countries for 246 observations. All variables we have are daily recorded.
+We also used an index calculated and published by Oxford University that measures the interventions applied in different fields like health supports, restrictions etc. (check data section for more information)  to explain number of deaths better. And lastly we added the mobility index to reach a preferable estimation of infected people. All variables we have are daily recorded.
+	
+	To determine the theoretical basis of our research, we reviewed some highly related articles. In the study that  (Haghpanah, Lin, Levin, & Klein, 2021) , researches tried to examine the effect of vaccination on mortality. They reached the result that, increase in the number of fully vaccinated people cause a decrease in deaths from COVID 19. Also, they mentioned that, earlier implementation of a less effective vaccine is more effective than later implementation of a more effective one. The less effective vaccine refers the earlier vaccines. Therefore we do not separated the effects of different vaccine types in our project. Another article (Arbel, Moore, Sergienko, & Pliskin, 2021) mentions that the effect of vaccination on mortality is higher than expected for overaged population. 
+	Government restrictions and supports in different field (check data section for more information) , or interventions in a short form, has a significant impact on mortality. According to the study on 32 countries (Dergiades, Milas, Mossialos, & Panagiotidis, 2020), greater the interventions has a slowing and reversing effect on the growth rate of deaths.
+	Moreover, when we examined the relation between number of fully vaccinated people and transmission (or number of infected people), study (Polack, Thomas, Kitchin, & Lockhart, 2020) mentions that two dose of COVID 19 vaccine offers a 95% protection against disease in persons older than 15. Furthermore, safety impact is continuing for median of 2 months.
+	And lastly we checked for the relations between mobility and transmission. In the data observed from 52 countries in the study (Nouvellet, Bhatia, Cori, & Baguelin, 2021) shows that transmission decreased significantly with lower mobility. Another study (Badr, ve diğerleri, 2020) supporting the finding with showing the strong negative correlation between mobility patterns and COVID 19 cases according to the data obtained from the most affected counties in the USA . 
+
+
+## Unit Root Testing 
+
+### Unit Root Testing for variable : confirmed
+First, let's check how this variable looks like:
+
+```{r confirmed-graph}
+ggplot(aes(x = date, y = confirmed, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+```
+
+As we can see, this variable is not stationary. So we suspect a unit root problem here. 
+Since we use LSE Approach, first we test I(2) and then I(1) and I(0). 
+
+```{r unitroot-confirmed, echo=FALSE}
+data1 <- as.data.table(data1)
+# Logarithm of confirmed
+data1[, lc := log(confirmed)]
+
+# First difference
+data1[, dc := lc - shift(lc), by = country]
+
+# Second difference 
+data1[, ddc := dc - shift(dc), by = country]
+
+# I(2) Test
+
+ggplot(aes(x = date, y = ddc, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(ddc ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Here, when we check the graph, we can see that this is Pure Random Walk. 
+
+In I(2) Test, we reject the null hypothesis : there is unit root. So we will test I(1):
+
+```{r i1-confirmed}
+ggplot(aes(x = date, y = dc, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+
+purtest(dc ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+As we can see, this is Random walk with drift pattern. 
+
+In I(1) Test, we reject the null hypothesis : there is unit root. So we will test I(0):
+
+```{r i0-confirmed, warning = FALSE}
+ggplot(aes(x = date, y = lc, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(lc ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Since the results shows that there is unit root in log(confirmed), this variable is I(1).
+
+### Unit Root Testing for variable : vaccines
+```{r vac, warning= FALSE}
+
+# First difference
+data1[, dv := vaccines - shift(vaccines), by = country]
+
+# Second difference 
+data1[, ddv := dv - shift(dv), by = country]
+
+
+# I(1) Test
+ggplot(aes(x = date, y = dv, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(dv ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+We saw that the graph of first difference of vaccines is following random walk with drift. 
+
+Since we have difficulties in I(2), we directly tested I(1) and we found no unit root. So we can test I(0).
+
+```{r i0-vac}
+ggplot(aes(x = date, y = vaccines, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(vaccines ~ 1 + trend, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+We see that the graph of vaccines is following random walk with drift and trend DGP. 
+
+The results of Im-Pesaran-Shin Unit root testing shows that there is unit root in vaccines at level. So vaccines variable is I(1).
+
+### Unit Root Testing for variable : containment_health_index
+```{r chx, warning= FALSE}
+
+# First difference
+data1[, dchx := containment_health_index - shift(containment_health_index), by = country]
+
+# Second difference 
+data1[, ddchx := dchx - shift(dchx), by = country]
+
+
+# I(2) Test
+ggplot(aes(x = date, y = ddchx, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(ddchx ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+There is no unit root in second difference of containment health index so let's test I(1):
+
+```{r i1-chx}
+ggplot(aes(x = date, y = dchx, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(dchx ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+
+The results of Im-Pesaran-Shin Unit root testing shows that there is no unit root in vaccines at first difference. So let's test it in levels:
+
+```{r i0-chx}
+ggplot(aes(x = date, y = containment_health_index, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(containment_health_index ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Since there is unit root in containment health index at levels, we can say that this variable is I(1).
+
+### Unit Root Testing for variable : deaths
+```{r deaths, warning= FALSE}
+
+# First difference
+data1[, dd := deaths - shift(deaths), by = country]
+
+# Second difference 
+data1[, ddd := dd - shift(dd), by = country]
+
+
+# I(2) Test
+ggplot(aes(x = date, y = ddd, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(ddd ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+There is no unit root in second difference of deaths so let's test I(1):
+
+```{r i1-d}
+ggplot(aes(x = date, y = dd, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(dd ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+
+The results of Im-Pesaran-Shin Unit root testing shows that there is no unit root in deaths at first difference. So let's test it in levels:
+
+```{r i0-d}
+ggplot(aes(x = date, y = deaths, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(deaths ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Since there is unit root in deaths at levels, we can say that this variable is I(1).
+
+### Unit Root Testing for variable : people fully vaccinated
+```{r pfv, warning= FALSE}
+
+# First difference
+data1[, dpfv := people_fully_vaccinated - shift(people_fully_vaccinated), by = country]
+
+# Second difference 
+data1[, ddpfv := dpfv - shift(dpfv), by = country]
+
+
+# I(2) Test
+ggplot(aes(x = date, y = ddpfv, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(ddpfv ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+There is no unit root in second difference of people fully vaccinated so let's test I(1):
+
+```{r i1-pfv}
+ggplot(aes(x = date, y = dpfv, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(dpfv ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+
+The results of Im-Pesaran-Shin Unit root testing shows that there is no unit root in people fully vaccinated at first difference. So let's test it in levels:
+
+```{r i0-pfv}
+ggplot(aes(x = date, y = people_fully_vaccinated, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(people_fully_vaccinated ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Since there is unit root in people fully vaccinated at levels, we can say that this variable is I(1).
+
+### Unit Root Testing for variable : residential
+```{r resi, warning= FALSE}
+
+# First difference
+data1[, dres := residential - shift(residential), by = country]
+
+# Second difference 
+data1[, ddres := dres - shift(dres), by = country]
+
+
+# I(2) Test
+ggplot(aes(x = date, y = ddres, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(ddres ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+
+```
+
+There is no unit root in second difference of residential mobility index so let's test I(1):
+
+```{r i1-res}
+ggplot(aes(x = date, y = dres, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(dres ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+
+The results of Im-Pesaran-Shin Unit root testing shows that there is no unit root in residential mobility index at first difference. So let's test it in levels:
+
+```{r i0-res}
+ggplot(aes(x = date, y = residential, group = 1), data = data1) +
+    stat_summary(fun=mean, geom="line") +
+    xlab("date")
+
+purtest(residential ~ 1, data = data1, index = c("country", "date"), pmax = 30, test = "ips")
+```
+
+Since there is no unit root in residential mobility index at levels, we can say that this variable is I(0).
+
+## Econometric Models
+
+### Econometric Model 1 : deaths ~ people_fully_vaccinated + containment_health_index
+
+```{r econometric1}
+model1 <- plm(deaths ~ people_fully_vaccinated + containment_health_index, data = data1, index = c("country","date"), model ="within", effect ="twoways")
+summary(model1)
+
+```
+
+We wanted to see if there is cointegration but since there is no proper package to test cointegration in panel data in R, we will test it manually:
+
+```{r unit root test for uhat}
+u1hat <- model1$residuals
+aux_1 <- 
+  lm(u1hat ~ -1 + lag(u1hat))
+summary(aux_1)
+```
+
+As a result, the ρ is not 0 since it is significant. So there is Autocorrelation in this model and we should use FGLS in order to estimate the model with consistent standard errors.
+
+Moreover, let's try Durbin Watson Test for panel models:
+
+```{r durbin1}
+pdwtest(model1)
+```
+
+As we can see, DW value is far away from 2. So there is clearly autocorrelation. Also H0 no serial correlation is rejected.
+
+To check if the residuals are I(1) or I(0), we should check if Ho: ρ = 1 or not.
+
+```{r ro equal to 1}
+t <- (0.987762 - 1)/0.001339
+tcrit <- - 1.960139
+t < tcrit
+```
+Since our t value is negative than the critical value, ρ cannot be equal to 1 so our residuals are I(0). 
+
+
+Let's check error correction mechanism
+
+```{r ecm}
+dataecm <- data1[, c("country","date","deaths","people_fully_vaccinated","containment_health_index")]
+dataecm <- dataecm[!is.na(deaths)]
+dataecm <- dataecm[!is.na(people_fully_vaccinated)]
+dataecm <- dataecm[!is.na(containment_health_index)]
+dataecm <- dataecm[, y := deaths - shift(deaths), by = country]
+dataecm <- dataecm[, x1 := people_fully_vaccinated - shift(people_fully_vaccinated), by = country]
+dataecm <- dataecm[, x2 := containment_health_index - shift(containment_health_index), by = country]
+x3 <- as.data.table(u1hat)
+dataecm <- dataecm[, nobs2 := .N, by = country]
+hg <- dataecm[, nobs2, keyby = country]
+country_vector <- as.vector(rep(c("ABW","ARG","AUS","AUT","BEL","BGR","BHR","BOL","BRA","BRB","CAN","CHE","CHL","COL","CZE","DEU","DNK","DOM","ECU","ESP","EST","FRA","GBR","GRC","GTM","HRV","IDN","IND","IRL","ISR","ITA","JPN","KAZ","KHM","KOR","LBN","LTU","LVA","MEX","MLT","MYS","NOR","NZL","PAN","PER","POL","PRT","PRY","ROU","RUS","SGP","SVK","SVN","THA","TTO","TUR","UKR","URY","USA","ZWE"), times = c(169,241,246,246,240,230,241,226,246,173,246,246,246,183,246,246,246,190,235,174,246,246,246,233,210,169,241,236,245,246,246,194,183,234,246,215,246,246,217,236,246,246,246,198,245,197,197,177,246,218,246,246,243,199,175,244,231,218,246,205)))
+x3 <- x3[, country := country_vector]
+a1 <- cbind(x3,dataecm$date)
+a1 <- cbind(a1,dataecm$y)
+a1 <- cbind(a1, dataecm$x1)
+a1 <- cbind(a1, dataecm$x2)
+names(a1)[3] <- "date"
+names(a1)[4] <- "y"
+names(a1)[5] <- "x1"
+names(a1)[6] <- "x2"
+a1 <- as.data.frame(a1)
+dataecm <- as.data.frame(dataecm)
+ecmmodel1 <- plm(y ~ x1 + x2 + lag(u1hat,1), data = a1, index = c("country","date"), model ="within", effect ="twoways")
+summary(ecmmodel1)
+```
+
+As we see, the coefficient of the uhat variable which is error correction term is between -1 and 0 and also it is significant! That means, while our residuals from model 1 is I(0), the ECM works! So we have found a cointegration relationship!
+
+### Econometric Model 2: Δconfirmed ~ Δpeople_fully_vaccinated + Δresidential
+
+```{r econometric22}
+model22 <- plm(dc ~ dpfv + dres, data = data1, index = c("country","date"), model = "within", effect = "individual")
+summary(model22)
+```
+
+Manual AR(1) test:
+
+```{r durbin2}
+pdwtest(model22)
+```
+
+As we can see, DW value is far away from 2. So there is clearly autocorrelation. Also H0 no serial correlation is rejected.
+
+```{r econometric2}
+model2 <- pggls(dc ~ dpfv + residential, data = data1, index = c("country","date"), model = "within", effect = "individual")
+summary(model2)
+```
+
+## Results
+
+
+In model 1, all the variables are I(1) so we first checked the cointegration relationship. This allowed us to see if we are dealing with a spurious regression and the need of ECM term in the regression with first differences. 
+
+For model 1, we found a cointegration relationship among deaths, containment health index and people fully vaccinated in the given dates and given countries. This cointegration relationship is supported by I(0) residuals and a correct Error Correction Mechanism. With this result, we saw that using their first differences without ECM would be ended up with omitted variables problem and we might missed the long-run equilibrium. 
+
+To talk about the effects of second dose vaccinations, we estimated that the effect of one more people to get second dose vaccinated on deaths due to Covid19 is -0.00018983. That means, when the people fully vaccinated increases, the deaths due to covid19 decreases. While the estimated coefficient is low, it shows the effect of only one person, so that means with the increase in herd immunity, the deaths can be decreased. 
+
+Also, in the Error Correction Equation, we can see the containment health index is insignificant on deaths due to covid. Even though the recent research which are mentioned in the literature review showed that the impact of the restrictions are significant on deaths, our data did not support that finding. 
+
+Moreover, in model 1, the coefficients are biased and not consistent since we did not use FGLS. Commenting about those estimates are not logical in that sense. 
+
+For model 2, we firstly used PLM function but since there is autocorrelation, in order to find the consistent and unbiased coefficients, we used FGLS. The estimation shows that both people fully vaccinated and residentials are highly significant on the speed of COVID19 spreading. 
+With the unit increase in change of people fully vaccination, we see that the confirmed cases are decreasing. 
+The increase in mobility of the residuals are increasing the change of confirmed cases. 
+Again, we see the coefficients are low but with the herd behavior, the speed of covid19 spreading is decreasing when the society is getting fully vaccinated and limiting their mobility.
+
+## References
+
+References
+Arbel, R., Moore, C. M., Sergienko, R., & Pliskin, J. (2021). How many lives do COVID vaccines save? Evidence from Israel.
+Badr, H. S., Du, H., Marshall, M., Dong, E., Squire, M. M., & Gardner, L. M. (2020). Association between mobility patterns and COVID-19 transmission in the USA: a mathematical modelling study.
+Deb, P., Furceri, D., Ostry, J. D., & Tawk, N. (2020). The Effect of Containment Measures on the Covid-19 Pandemic.
+Dergiades, T., Milas, C., Mossialos, E., & Panagiotidis, T. (2020). Effectiveness of Government Policies in Response to the COVID-19 Outbreak.
+Haghpanah, F., Lin, G., Levin, S. A., & Klein, E. (2021). Analysis of the potential impact of durability, timing, and transmission.
+K, K. P., Aithal, P., Vinayachandra, & K, G. P. (2021). An AI-based Analysis of the Effect of COVID-19 Stringency Index on Infection Rates: A Case of India.
+Nouvellet, P., Bhatia, S., Cori, A., & Baguelin, M. (2021). Reduction in mobility and COVID-19 transmission.
+Polack, F. P., Thomas, S. J., Kitchin, N., & Lockhart, S. (2020). Safety and Efficacy of the BNT162b2 mRNA Covid-19 Vaccine.
+
